@@ -94,7 +94,7 @@
     </div>
 
     <!-- Main Content Area -->
-    <main id="main-content" class="flex-1 min-w-0 px-4 sm:px-6 lg:px-10 py-6 lg:py-8 max-w-5xl mx-auto w-full"></main>
+    <main id="main-content" class="flex-1 min-w-0 px-4 sm:px-6 lg:px-10 py-6 lg:py-8 max-w-5xl mx-auto w-full"><div class="py-16 text-center text-sm text-slate-500 dark:text-slate-400">Carregando módulos da Central de Estudos (2º, 4º e 8º Semestre)...</div></main>
   </div>
 
   <!-- Back to top -->
@@ -161,8 +161,12 @@
         document.getElementById('portal-dynamic-styles').textContent = coreMod.css;
 
         // 2. Extract base app-data (Frutas 9 aulas + Organica 4 topicos & 16 simulados)
-        const appSplit = baseHtml.split('<script id="app-data" type="application/json">')[1];
-        const baseAppData = JSON.parse(appSplit.split('<\/script>')[0].split('</script>')[0]);
+        // IMPORTANT: Never write literal closing script tag inside inline script!
+        const OPEN_SCRIPT = '<' + 'script>';
+        const CLOSE_SCRIPT = '<' + '/script>';
+        const ESC_CLOSE_SCRIPT = '<\\' + '/script>';
+        const appSplit = baseHtml.split('<' + 'script id="app-data" type="application/json">')[1];
+        const baseAppData = JSON.parse(appSplit.split(CLOSE_SCRIPT)[0].split(ESC_CLOSE_SCRIPT)[0]);
 
         // 3. Merge GCQ (8º Semestre) and FT1 (4º Semestre) into app-data
         baseAppData.gcq = gcqMod.gcq;
@@ -171,7 +175,7 @@
         document.getElementById('app-data').textContent = JSON.stringify(baseAppData);
 
         // 4. Extract base Script #1 (QO_MODULES + renderFrutasDiagram) and inject GCQ SVGs + FT1_MODULE
-        const inlineScripts = [...baseHtml.matchAll(/<script>(.*?)<\/script>/gs)].map(m => m[1]);
+        const inlineScripts = baseHtml.split(OPEN_SCRIPT).slice(1).map(part => part.split(CLOSE_SCRIPT)[0]);
         let script1 = inlineScripts[1];
         script1 = script1.replace("  return '';", gcqMod.diagramsJs + "\n  return '';");
         (0, eval)(script1 + "\nwindow.renderFrutasDiagram = renderFrutasDiagram;\n" + ft1Mod.moduleJs);
