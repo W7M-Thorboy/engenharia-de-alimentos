@@ -103,9 +103,10 @@
   </button>
 
   <script id="app-data" type="application/json">{}</script>
-  <script src="modulo-qualidade.js?v=2"></script>
-  <script src="modulo-ft1.js?v=2"></script>
-  <script src="portal-core.js?v=2"></script>
+  <script src="modulo-qualidade.js?v=3"></script>
+  <script src="modulo-ft1.js?v=3"></script>
+  <script src="modulo-organica-sim34.js?v=3"></script>
+  <script src="portal-core.js?v=3"></script>
   <script>
     (async function bootModularPortal() {
       const mainEl = document.getElementById('main-content');
@@ -146,15 +147,17 @@
       }
 
       try {
-        const [baseHtml, gcqJson, ft1Json, coreJson] = await Promise.all([
+        const [baseHtml, gcqJson, ft1Json, sim34Json, coreJson] = await Promise.all([
           fetchBaseHtml(),
           gunzipB64(window.MOD_GCQ_GZ),
           gunzipB64(window.MOD_FT1_GZ),
+          gunzipB64(window.MOD_SIM34_GZ),
           gunzipB64(window.MOD_CORE_GZ)
         ]);
 
         const gcqMod = JSON.parse(gcqJson);
         const ft1Mod = JSON.parse(ft1Json);
+        const sim34Mod = JSON.parse(sim34Json);
         const coreMod = JSON.parse(coreJson);
 
         // 1. Inject full CSS
@@ -168,17 +171,20 @@
         const appSplit = baseHtml.split('<' + 'script id="app-data" type="application/json">')[1];
         const baseAppData = JSON.parse(appSplit.split(CLOSE_SCRIPT)[0].split(ESC_CLOSE_SCRIPT)[0]);
 
-        // 3. Merge GCQ (8º Semestre) and FT1 (4º Semestre) into app-data
+        // 3. Merge GCQ (8º Semestre), FT1 (4º Semestre), and Simulado T3 & T4 (2º Semestre) into app-data
         baseAppData.gcq = gcqMod.gcq;
         baseAppData.ft1 = ft1Mod.ft1;
+        if (baseAppData.organica && sim34Mod.sim34BodyHtml) {
+          baseAppData.organica.sim34BodyHtml = sim34Mod.sim34BodyHtml;
+        }
         baseAppData.frutasInteractive = Object.assign({}, baseAppData.frutasInteractive || {}, gcqMod.interactive || {});
         document.getElementById('app-data').textContent = JSON.stringify(baseAppData);
 
-        // 4. Extract base Script #1 (QO_MODULES + renderFrutasDiagram) and inject GCQ SVGs + FT1_MODULE
+        // 4. Extract base Script #1 (QO_MODULES + renderFrutasDiagram) and inject GCQ SVGs + QO_SIM34_MODULE + FT1_MODULE
         const inlineScripts = baseHtml.split(OPEN_SCRIPT).slice(1).map(part => part.split(CLOSE_SCRIPT)[0]);
         let script1 = inlineScripts[1];
         script1 = script1.replace("  return '';", gcqMod.diagramsJs + "\n  return '';");
-        (0, eval)(script1 + "\nwindow.renderFrutasDiagram = renderFrutasDiagram;\n" + ft1Mod.moduleJs);
+        (0, eval)(script1 + "\nwindow.renderFrutasDiagram = renderFrutasDiagram;\n" + (sim34Mod.sim34ModuleJs || "") + "\n" + ft1Mod.moduleJs);
 
         // 5. Run unified 4-subject portal controller
         (0, eval)(coreMod.controllerJs);
