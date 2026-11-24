@@ -147,12 +147,16 @@
       }
 
       try {
+        const fixedCoreB64 = String(window.MOD_CORE_GZ || '')
+          .replace('d75GXjI51imDOV', 'd75GXjI71imDOV')
+          .replace('04cLGoa8vhNyO3', '04cLGoaS8vhNyO3');
+
         const [baseHtml, gcqJson, ft1Json, sim34Json, coreJson] = await Promise.all([
           fetchBaseHtml(),
           gunzipB64(window.MOD_GCQ_GZ),
           gunzipB64(window.MOD_FT1_GZ),
           gunzipB64(window.MOD_SIM34_GZ),
-          gunzipB64(window.MOD_CORE_GZ)
+          gunzipB64(fixedCoreB64)
         ]);
 
         const gcqMod = JSON.parse(gcqJson);
