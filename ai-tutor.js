@@ -236,6 +236,15 @@
       border-radius: 3px;
       font-size: 0.86rem;
     }
+    .katex {
+      font-size: 1.04em;
+    }
+    .katex-display {
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 0.35rem 0;
+      margin: 0.45rem 0;
+    }
     .pai-form {
       padding: 0.75rem 0.9rem;
       border-top: 1px solid #dfd9cc;
@@ -302,6 +311,20 @@
 
   function renderMarkdown(md) {
     let html = escHtml(md || '');
+    // Protege blocos LaTeX ($$...$$, \[...\], \(...\), $...$) contra formatacao * / _ de markdown
+    const mathStash = [];
+    function stash(match) {
+      const idx = mathStash.length;
+      mathStash.push(match);
+      return '@@MATH_' + idx + '@@';
+    }
+    // Protege moeda brasileira R$ antes de capturar $...$
+    html = html.replace(/R\$/g, 'R&#36;');
+    html = html.replace(/\$\$[\s\S]+?\$\$/g, stash);
+    html = html.replace(/\\\[[\s\S]+?\\\]/g, stash);
+    html = html.replace(/\\\([\s\S]+?\\\)/g, stash);
+    html = html.replace(/\$(?!\s)([^$\n]+?)(?!\s)\$/g, stash);
+
     html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
     html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
@@ -320,8 +343,39 @@
       }
     });
     if (inList) out += '</ul>';
+    out = out.replace(/@@MATH_(\d+)@@/g, function (_, i) {
+      return mathStash[Number(i)] || '';
+    });
     return out || '<p></p>';
   }
+
+  function renderPortalMath(rootEl) {
+    if (!rootEl || typeof window.renderMathInElement !== 'function') return;
+    try {
+      // Se o container tiver valores em R$, usa apenas delimitadores explicitos ($$, \[...\], \(...\))
+      // para nunca confundir dois "R$" na mesma frase com uma formula LaTeX.
+      const hasBrl = /R\$\s*\d/.test(rootEl.textContent || '');
+      const delimiters = hasBrl
+        ? [
+            { left: '$$', right: '$$', display: true },
+            { left: '\\[', right: '\\]', display: true },
+            { left: '\\(', right: '\\)', display: false }
+          ]
+        : [
+            { left: '$$', right: '$$', display: true },
+            { left: '\\[', right: '\\]', display: true },
+            { left: '$', right: '$', display: false },
+            { left: '\\(', right: '\\)', display: false }
+          ];
+      window.renderMathInElement(rootEl, {
+        delimiters: delimiters,
+        throwOnError: false,
+        strict: false,
+        ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code', 'svg']
+      });
+    } catch (e) {}
+  }
+  window.renderPortalMath = renderPortalMath;
 
   function getApiKey() {
     try { return (localStorage.getItem(KEY_STORAGE) || '').trim(); } catch (e) { return ''; }
@@ -493,7 +547,8 @@
 
     const systemPrompt =
       'Você é o Tutor Acadêmico de Engenharia de Alimentos (UNESP–IBILCE). Responda sempre em Português do Brasil, com rigor técnico de graduação, clareza didática e objetividade. ' +
-      'Conecte química, fisiologia, fenômenos de transporte, qualidade e decisões industriais sempre que pertinente.\n\n' +
+      'Conecte química, fisiologia, fenômenos de transporte, qualidade e decisões industriais sempre que pertinente. ' +
+      'Para fórmulas matemáticas, equações de transporte, reações e parâmetros (como pKa, aw, ΔP, frações, integrais), use LaTeX limpo entre $...$ (inline) ou $$...$$ (destaque).\n\n' +
       'CONTEXTO ATUAL DA TELA DO ALUNO:\n' +
       'Rota: ' + ctx.hash + '\n' +
       'Título: ' + ctx.heading + '\n' +
@@ -624,7 +679,29 @@
     `;
 
     const list = panel.querySelector('#pai-msg-list');
-    if (list) list.scrollTop = list.scrollHeight;
+    if (list) {
+      renderPortalMath(list);
+      list.scrollTop = list.scrollHeight;
+    }
+  }
+
+  let mathSweepTimer = null;
+  function scheduleMainMath() {
+    if (mathSweepTimer) clearTimeout(mathSweepTimer);
+    mathSweepTimer = setTimeout(function () {
+      mathSweepTimer = null;
+      const main = document.getElementById('main-content');
+      if (main) renderPortalMath(main);
+    }, 120);
+  }
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('click', function () {
+      scheduleMainMath();
+    });
+    window.addEventListener('load', function () {
+      scheduleMainMath();
+    });
   }
 
   window.PORTAL_AI_TUTOR = {
