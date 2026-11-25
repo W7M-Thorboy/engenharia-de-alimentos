@@ -594,6 +594,9 @@
   /* Gancho automático para o portal modular publicado no GitHub Pages */
   let modularAttached = false;
   let activeModularExamId = null;
+  let isInjectingModular = false;
+  let injectTimerId = null;
+  let modularObserver = null;
 
   function ensureCssInjected() {
     if (document.getElementById('pmcq-injected-css')) return;
@@ -605,102 +608,128 @@
     }
   }
 
+  function scheduleInjectModularButtons() {
+    if (injectTimerId) return;
+    injectTimerId = setTimeout(function () {
+      injectTimerId = null;
+      injectModularButtons();
+    }, 50);
+  }
+
   function injectModularButtons() {
-    const exams = getExamsMap();
-    const sidebars = document.querySelectorAll('#sidebar-content-desktop, #sidebar-content-mobile');
-    sidebars.forEach(nav => {
-      if (!nav) return;
+    if (isInjectingModular) return;
+    isInjectingModular = true;
+    if (modularObserver) {
+      try { modularObserver.disconnect(); } catch (e) {}
+    }
+    try {
+      const exams = getExamsMap();
+      const sidebars = document.querySelectorAll('#sidebar-content-desktop, #sidebar-content-mobile');
+      sidebars.forEach(nav => {
+        if (!nav) return;
 
-      const specs = [
-        { examId: 'organica_t12', findAnchor: n => n.querySelector('[data-nav-screen="organica-sim34"]'), position: 'beforebegin' },
-        { examId: 'ft1_p1', findAnchor: n => { const els = n.querySelectorAll('[data-open-ft1]'); return els.length ? els[els.length - 1] : null; }, position: 'afterend' },
-        { examId: 'frutas_geral', findAnchor: n => { const els = n.querySelectorAll('[data-open-lec]'); return els.length ? els[els.length - 1] : n.querySelector('[data-nav-screen="frutas-home"]'); }, position: 'afterend' },
-        { examId: 'gcq_ferramentas', findAnchor: n => { const els = n.querySelectorAll('[data-open-gcq]'); return els.length ? els[els.length - 1] : n.querySelector('[data-nav-screen="gcq-home"]'); }, position: 'afterend' }
-      ];
+        const specs = [
+          { examId: 'organica_t12', findAnchor: n => n.querySelector('[data-nav-screen="organica-sim34"]'), position: 'beforebegin' },
+          { examId: 'ft1_p1', findAnchor: n => { const els = n.querySelectorAll('[data-open-ft1]'); return els.length ? els[els.length - 1] : null; }, position: 'afterend' },
+          { examId: 'frutas_geral', findAnchor: n => { const els = n.querySelectorAll('[data-open-lec]'); return els.length ? els[els.length - 1] : n.querySelector('[data-nav-screen="frutas-home"]'); }, position: 'afterend' },
+          { examId: 'gcq_ferramentas', findAnchor: n => { const els = n.querySelectorAll('[data-open-gcq]'); return els.length ? els[els.length - 1] : n.querySelector('[data-nav-screen="gcq-home"]'); }, position: 'afterend' }
+        ];
 
-      specs.forEach(sp => {
-        const ex = exams[sp.examId];
-        if (!ex) return;
-        const prog = getProgress(sp.examId);
-        const existing = nav.querySelector('[data-open-mcq="' + sp.examId + '"]');
-        if (existing) {
-          const badge = existing.querySelector('.pmcq-sb-count');
-          if (badge) badge.textContent = prog.done + '/' + prog.total;
+        specs.forEach(sp => {
+          const ex = exams[sp.examId];
+          if (!ex) return;
+          const prog = getProgress(sp.examId);
+          const countTxt = prog.done + '/' + prog.total;
           const isAct = activeModularExamId === sp.examId;
-          existing.className = 'w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-left text-sm transition ' +
+          const targetCls = 'w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-left text-sm transition ' +
             (isAct
               ? 'bg-slate-900 text-white dark:bg-stone-200 dark:text-stone-950 font-semibold shadow-xs'
               : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800');
-          return;
-        }
-        const anchor = sp.findAnchor(nav);
-        if (!anchor) return;
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.setAttribute('data-open-mcq', sp.examId);
-        btn.className = 'w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-left text-sm transition ' +
-          (activeModularExamId === sp.examId
-            ? 'bg-slate-900 text-white dark:bg-stone-200 dark:text-stone-950 font-semibold shadow-xs'
-            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800');
-        btn.innerHTML =
-          '<div class="flex items-center gap-2.5 min-w-0">' +
-            '<span class="w-2 h-2 rounded-full shrink-0" style="background:' + escHtml(ex.accent || '#a67c37') + '"></span>' +
-            '<span class="truncate">' + escHtml(ex.shortTitle) + '</span>' +
-          '</div>' +
-          '<span class="pmcq-sb-count text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">' +
-          prog.done + '/' + prog.total + '</span>';
-        anchor.insertAdjacentElement(sp.position, btn);
-      });
-    });
 
-    // Injeta CTA editorial nos painéis iniciais quando renderizados no portal modular
-    const main = document.getElementById('main-content');
-    if (main && !main.querySelector('#pmcq-modular-host') && !main.querySelector('.pmcq-home-strip')) {
-      const homeChecks = [
-        { test: n => !!n.querySelector('[data-nav-screen="organica-sim34"]') && !n.querySelector('[data-nav-screen="frutas-home"]'), examId: 'organica_t12' },
-        { test: n => !!n.querySelector('#ft1-stage'), examId: 'ft1_p1' },
-        { test: n => !!n.querySelector('[data-open-lec]') && !n.querySelector('[data-nav-screen="organica-home"]'), examId: 'frutas_geral' },
-        { test: n => !!n.querySelector('[data-open-gcq]') && !n.querySelector('[data-nav-screen="organica-home"]'), examId: 'gcq_ferramentas' }
-      ];
-      const hit = homeChecks.find(h => exams[h.examId] && h.test(main));
-      if (hit) {
-        const ex = exams[hit.examId];
-        const p = getProgress(hit.examId);
-        const strip = document.createElement('div');
-        strip.className = 'pmcq-home-strip mb-4 flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900';
-        strip.innerHTML =
-          '<div>' +
-            '<div class="text-[11px] font-bold uppercase tracking-wider text-stone-500 dark:text-stone-400">Simulado de Múltipla Escolha (' + p.total + ' Questões)</div>' +
-            '<div class="text-base font-bold text-stone-900 dark:text-stone-100">' + escHtml(ex.title) + '</div>' +
-            '<div class="text-xs text-stone-600 dark:text-stone-400">Modo Estudo e Modo Prova · Cronômetro · Gabarito Comentado (' + p.done + '/' + p.total + ' respondidas)</div>' +
-          '</div>' +
-          '<button type="button" data-open-mcq="' + ex.id + '" class="px-4 py-2 rounded-lg text-xs font-bold bg-stone-900 text-white hover:bg-stone-800 dark:bg-stone-200 dark:text-stone-950 transition">Abrir Simulado →</button>';
-        const firstSection = main.querySelector('section') || main.firstElementChild;
-        if (firstSection) firstSection.insertAdjacentElement('afterend', strip);
-      } else if (main.querySelector('[data-nav-screen="organica-home"]') && main.querySelector('[data-nav-screen="frutas-home"]')) {
-        // Portal Home: faixa compacta com todos os 4 novos simulados MCQ
-        const strip = document.createElement('section');
-        strip.className = 'pmcq-home-strip mb-6 p-4 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900';
-        const cards = ['organica_t12', 'ft1_p1', 'frutas_geral', 'gcq_ferramentas'].map(id => {
-          const ex = exams[id];
-          if (!ex) return '';
-          const p = getProgress(id);
-          return '<button type="button" data-open-mcq="' + id + '" class="text-left p-3 rounded-lg border border-stone-200 dark:border-stone-700 hover:border-stone-400 dark:hover:border-stone-500 transition bg-stone-50/70 dark:bg-stone-800/60">' +
-            '<div class="text-[10px] font-bold uppercase tracking-wider text-stone-500 dark:text-stone-400">' + escHtml(ex.subjectLabel) + ' · ' + p.done + '/' + p.total + '</div>' +
-            '<div class="text-sm font-bold text-stone-900 dark:text-stone-100 mt-0.5">' + escHtml(ex.shortTitle) + '</div>' +
-          '</button>';
-        }).join('');
-        strip.innerHTML =
-          '<div class="flex flex-wrap items-center justify-between gap-2 mb-3">' +
-            '<div>' +
-              '<div class="text-[11px] font-bold uppercase tracking-wider text-stone-500 dark:text-stone-400">Avaliações Objetivas</div>' +
-              '<h3 class="text-base font-bold text-stone-900 dark:text-stone-100">Simulados de Múltipla Escolha por Disciplina</h3>' +
+          const existing = nav.querySelector('[data-open-mcq="' + sp.examId + '"]');
+          if (existing) {
+            const badge = existing.querySelector('.pmcq-sb-count');
+            if (badge && badge.textContent !== countTxt) badge.textContent = countTxt;
+            if (existing.className !== targetCls) existing.className = targetCls;
+            return;
+          }
+          const anchor = sp.findAnchor(nav);
+          if (!anchor) return;
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.setAttribute('data-open-mcq', sp.examId);
+          btn.className = targetCls;
+          btn.innerHTML =
+            '<div class="flex items-center gap-2.5 min-w-0">' +
+              '<span class="w-2 h-2 rounded-full shrink-0" style="background:' + escHtml(ex.accent || '#a67c37') + '"></span>' +
+              '<span class="truncate">' + escHtml(ex.shortTitle) + '</span>' +
             '</div>' +
-            '<span class="text-xs text-stone-500 dark:text-stone-400">75 novas questões + 20 de Orgânica T3/T4</span>' +
-          '</div>' +
-          '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">' + cards + '</div>';
-        const firstSection = main.querySelector('section');
-        if (firstSection) firstSection.insertAdjacentElement('afterend', strip);
+            '<span class="pmcq-sb-count text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">' +
+            countTxt + '</span>';
+          anchor.insertAdjacentElement(sp.position, btn);
+        });
+      });
+
+      // Injeta CTA editorial nos painéis iniciais quando renderizados no portal modular
+      const main = document.getElementById('main-content');
+      if (main && !main.querySelector('#pmcq-modular-host') && !main.querySelector('.pmcq-home-strip')) {
+        const homeChecks = [
+          { test: n => !!n.querySelector('[data-nav-screen="organica-sim34"]') && !n.querySelector('[data-nav-screen="frutas-home"]'), examId: 'organica_t12' },
+          { test: n => !!n.querySelector('#ft1-stage'), examId: 'ft1_p1' },
+          { test: n => !!n.querySelector('[data-open-lec]') && !n.querySelector('[data-nav-screen="organica-home"]'), examId: 'frutas_geral' },
+          { test: n => !!n.querySelector('[data-open-gcq]') && !n.querySelector('[data-nav-screen="organica-home"]'), examId: 'gcq_ferramentas' }
+        ];
+        const hit = homeChecks.find(h => exams[h.examId] && h.test(main));
+        if (hit) {
+          const ex = exams[hit.examId];
+          const p = getProgress(hit.examId);
+          const strip = document.createElement('div');
+          strip.className = 'pmcq-home-strip mb-4 flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900';
+          strip.innerHTML =
+            '<div>' +
+              '<div class="text-[11px] font-bold uppercase tracking-wider text-stone-500 dark:text-stone-400">Simulado de Múltipla Escolha (' + p.total + ' Questões)</div>' +
+              '<div class="text-base font-bold text-stone-900 dark:text-stone-100">' + escHtml(ex.title) + '</div>' +
+              '<div class="text-xs text-stone-600 dark:text-stone-400">Modo Estudo e Modo Prova · Cronômetro · Gabarito Comentado (' + p.done + '/' + p.total + ' respondidas)</div>' +
+            '</div>' +
+            '<button type="button" data-open-mcq="' + ex.id + '" class="px-4 py-2 rounded-lg text-xs font-bold bg-stone-900 text-white hover:bg-stone-800 dark:bg-stone-200 dark:text-stone-950 transition">Abrir Simulado →</button>';
+          const firstSection = main.querySelector('section') || main.firstElementChild;
+          if (firstSection) firstSection.insertAdjacentElement('afterend', strip);
+        } else if (main.querySelector('[data-nav-screen="organica-home"]') && main.querySelector('[data-nav-screen="frutas-home"]')) {
+          const strip = document.createElement('section');
+          strip.className = 'pmcq-home-strip mb-6 p-4 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900';
+          const cards = ['organica_t12', 'ft1_p1', 'frutas_geral', 'gcq_ferramentas'].map(id => {
+            const ex = exams[id];
+            if (!ex) return '';
+            const p = getProgress(id);
+            return '<button type="button" data-open-mcq="' + id + '" class="text-left p-3 rounded-lg border border-stone-200 dark:border-stone-700 hover:border-stone-400 dark:hover:border-stone-500 transition bg-stone-50/70 dark:bg-stone-800/60">' +
+              '<div class="text-[10px] font-bold uppercase tracking-wider text-stone-500 dark:text-stone-400">' + escHtml(ex.subjectLabel) + ' · ' + p.done + '/' + p.total + '</div>' +
+              '<div class="text-sm font-bold text-stone-900 dark:text-stone-100 mt-0.5">' + escHtml(ex.shortTitle) + '</div>' +
+            '</button>';
+          }).join('');
+          strip.innerHTML =
+            '<div class="flex flex-wrap items-center justify-between gap-2 mb-3">' +
+              '<div>' +
+                '<div class="text-[11px] font-bold uppercase tracking-wider text-stone-500 dark:text-stone-400">Avaliações Objetivas</div>' +
+                '<h3 class="text-base font-bold text-stone-900 dark:text-stone-100">Simulados de Múltipla Escolha por Disciplina</h3>' +
+              '</div>' +
+              '<span class="text-xs text-stone-500 dark:text-stone-400">75 novas questões + 20 de Orgânica T3/T4</span>' +
+            '</div>' +
+            '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">' + cards + '</div>';
+          const firstSection = main.querySelector('section');
+          if (firstSection) firstSection.insertAdjacentElement('afterend', strip);
+        }
+      }
+    } finally {
+      isInjectingModular = false;
+      if (modularObserver) {
+        const targets = [
+          document.getElementById('sidebar-content-desktop'),
+          document.getElementById('sidebar-content-mobile'),
+          document.getElementById('main-content')
+        ].filter(Boolean);
+        targets.forEach(t => {
+          try { modularObserver.observe(t, { childList: true }); } catch (e) {}
+        });
       }
     }
   }
@@ -755,11 +784,10 @@
       }
     }, true);
 
-    if (typeof MutationObserver !== 'undefined' && document.body) {
-      const obs = new MutationObserver(function () {
-        injectModularButtons();
+    if (typeof MutationObserver !== 'undefined') {
+      modularObserver = new MutationObserver(function () {
+        scheduleInjectModularButtons();
       });
-      obs.observe(document.body, { childList: true, subtree: true });
     }
 
     injectModularButtons();
